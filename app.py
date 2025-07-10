@@ -10,7 +10,11 @@ load_dotenv()
 app = Flask(__name__)
 
 # Konfiguracja Hugging Face API
-API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"  # Zmieniono na medium
+# Opcje modeli (odkomentuj żądany):
+API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"  # Domyślny
+# API_URL = "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill"  # Alternatywny 1
+# API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-small"  # Alternatywny 2
+
 HF_TOKEN = os.getenv('HF_TOKEN', 'TWÓJ_TOKEN_HF')  # Ustaw token w pliku .env
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
@@ -19,6 +23,10 @@ if HF_TOKEN == 'TWÓJ_TOKEN_HF' or not HF_TOKEN:
     print("⚠️  OSTRZEŻENIE: Brak tokenu Hugging Face!")
     print("   Ustaw token w pliku .env lub jako zmienną środowiskową HF_TOKEN")
     print("   Token możesz uzyskać na: https://huggingface.co/settings/tokens")
+    print("   Token powinien mieć typ 'Read' i być aktywny")
+else:
+    print(f"✅ Token HF ustawiony (długość: {len(HF_TOKEN)})")
+    print(f"🔗 Używany model: {API_URL}")
 
 def generuj_odpowiedz(pytanie):
     """Generuje zabawną i miłą odpowiedź dla znajomej"""
@@ -185,6 +193,59 @@ def chat():
         'response': bot_response,
         'timestamp': datetime.now().strftime('%H:%M')
     })
+
+@app.route('/test-token')
+def test_token():
+    """Test sprawdzający czy token jest poprawny"""
+    try:
+        # Prosta weryfikacja tokena poprzez zapytanie do API
+        test_headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+        
+        # Próba prostego zapytania do API
+        response = requests.get(
+            "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium",
+            headers=test_headers,
+            timeout=10
+        )
+        
+        result_html = f"""
+        <h1>🔐 Test Tokena Hugging Face</h1>
+        <h2>Konfiguracja:</h2>
+        <p><strong>Token ustawiony:</strong> {HF_TOKEN != 'TWÓJ_TOKEN_HF' and HF_TOKEN is not None}</p>
+        <p><strong>Token długość:</strong> {len(HF_TOKEN) if HF_TOKEN else 0}</p>
+        <p><strong>Token pierwsze 10 znaków:</strong> {HF_TOKEN[:10] if HF_TOKEN else 'Brak'}...</p>
+        
+        <h2>Test autoryzacji:</h2>
+        <p><strong>Status Code:</strong> {response.status_code}</p>
+        <p><strong>Response:</strong></p>
+        <pre>{response.text[:500]}...</pre>
+        
+        <h2>Interpretacja:</h2>
+        """
+        
+        if response.status_code == 200:
+            result_html += "<p>✅ <strong>Token jest POPRAWNY!</strong></p>"
+        elif response.status_code == 401:
+            result_html += "<p>❌ <strong>Token jest NIEPOPRAWNY lub NIEAKTYWNY!</strong></p>"
+            result_html += "<p>Wygeneruj nowy token na: https://huggingface.co/settings/tokens</p>"
+        else:
+            result_html += f"<p>⚠️ <strong>Nieoczekiwany status: {response.status_code}</strong></p>"
+        
+        result_html += """
+        <hr>
+        <p><a href="/test-api">🔍 Test pełnego API</a></p>
+        <p><a href="/debug">🛠️ Debug Info</a></p>
+        <p><a href="/">🏠 Powrót do chatbota</a></p>
+        """
+        
+        return result_html
+        
+    except Exception as e:
+        return f"""
+        <h1>💥 Błąd testu tokena</h1>
+        <p>Błąd: {str(e)}</p>
+        <p><a href="/">🏠 Powrót do chatbota</a></p>
+        """
 
 if __name__ == '__main__':
     # Pobierz port z zmiennej środowiskowej (dla hostingu w chmurze)
