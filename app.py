@@ -15,7 +15,41 @@ API_URL = "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-
 # API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"  # Oryginalny
 # API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-small"  # Alternatywny 2
 
-HF_TOKEN = os.getenv('HF_TOKEN', 'TWÓJ_TOKEN_HF')  # Ustaw token w pliku .env
+# Próba odczytania tokena z różnych źródeł
+HF_TOKEN = None
+
+# 1. Próba z zmiennej środowiskowej
+if os.getenv('HF_TOKEN') and os.getenv('HF_TOKEN') != 'TWÓJ_TOKEN_HF':
+    HF_TOKEN = os.getenv('HF_TOKEN').strip()
+    print(f"✅ Token z env variable (długość: {len(HF_TOKEN)})")
+
+# 2. Próba z pliku config.py (jeśli istnieje)
+if not HF_TOKEN:
+    try:
+        import config  # type: ignore
+        if hasattr(config, 'HF_TOKEN_ALT') and config.HF_TOKEN_ALT != 'TWÓJ_TOKEN_TUTAJ':
+            HF_TOKEN = config.HF_TOKEN_ALT.strip()
+            print(f"✅ Token z config.py (długość: {len(HF_TOKEN)})")
+    except (ImportError, AttributeError):
+        print("⚠️  Brak pliku config.py lub tokena w config.py")
+
+# 3. Fallback do zmiennej środowiskowej (nawet jeśli pusta)
+if not HF_TOKEN:
+    HF_TOKEN = os.getenv('HF_TOKEN', 'TWÓJ_TOKEN_HF')
+
+# Sprawdzenie i czyszczenie tokena
+if HF_TOKEN:
+    # Usuń możliwe spacje, nowe linie, tabulatory
+    HF_TOKEN = HF_TOKEN.strip().replace('\n', '').replace('\r', '').replace('\t', '')
+    
+    # Sprawdź czy token ma poprawny format
+    if not HF_TOKEN.startswith('hf_'):
+        print(f"⚠️  Token nie zaczyna się od 'hf_': {HF_TOKEN[:10]}...")
+    
+    # Sprawdź długość tokena (typowo 37 znaków)
+    if len(HF_TOKEN) < 30:
+        print(f"⚠️  Token wydaje się za krótki: {len(HF_TOKEN)} znaków")
+
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 # Sprawdzenie czy token jest ustawiony
@@ -105,13 +139,28 @@ def debug():
     index_exist = os.path.exists('templates/index.html')
     
     debug_info = f"""
-    <h1>Debug Info</h1>
+    <h1>🛠️ Debug Info</h1>
     <p><strong>Folder templates istnieje:</strong> {templates_exist}</p>
     <p><strong>Plik templates/index.html istnieje:</strong> {index_exist}</p>
     <p><strong>HF_TOKEN ustawiony:</strong> {HF_TOKEN != 'TWÓJ_TOKEN_HF' and HF_TOKEN is not None}</p>
+    <p><strong>HF_TOKEN długość:</strong> {len(HF_TOKEN) if HF_TOKEN else 0}</p>
     <p><strong>API URL:</strong> {API_URL}</p>
-    <h2>Wszystkie pliki na serwerze:</h2>
+    
+    <h2>🔍 Endpointy diagnostyczne:</h2>
+    <ul>
+        <li><a href="/debug-token-raw">🔍 Debug Raw Token</a> - szczegółowy debug tokena</li>
+        <li><a href="/test-token-formats">🔧 Test formatów tokena</a> - test różnych formatów autoryzacji</li>
+        <li><a href="/test-hardcoded-token">🔨 Test hardcoded token</a> - test z tokenem w kodzie</li>
+        <li><a href="/test-token">🔐 Test tokena</a> - standardowy test</li>
+        <li><a href="/test-api">🧪 Test API</a> - test pełnego API</li>
+        <li><a href="/test-models">🤖 Test modeli</a> - test różnych modeli</li>
+    </ul>
+    
+    <h2>📁 Wszystkie pliki na serwerze:</h2>
     <pre>{"<br>".join(files)}</pre>
+    
+    <hr>
+    <p><a href="/">🏠 Powrót do chatbota</a></p>
     """
     
     return debug_info
@@ -339,6 +388,190 @@ def test_models():
     <hr>
     <p><a href="/test-token">🔐 Test tokena</a></p>
     <p><a href="/test-api">🔍 Test aktualnego API</a></p>
+    <p><a href="/">🏠 Powrót do chatbota</a></p>
+    """
+    
+    return result_html
+
+@app.route('/debug-token-raw')
+def debug_token_raw():
+    """Szczegółowy debug tokena - RAW"""
+    import base64
+    
+    # Sprawdź różne sposoby odczytywania tokena
+    token_from_env = os.getenv('HF_TOKEN')
+    token_from_env_upper = os.getenv('HF_TOKEN', '').upper()
+    token_stripped = os.getenv('HF_TOKEN', '').strip()
+    
+    # Sprawdź czy token jest base64
+    try:
+        if token_from_env:
+            decoded = base64.b64decode(token_from_env).decode('utf-8')
+            is_base64 = True
+        else:
+            decoded = "No token"
+            is_base64 = False
+    except:
+        decoded = "Not base64"
+        is_base64 = False
+    
+    # Sprawdź format tokena
+    token_analysis = {
+        'raw_token': token_from_env,
+        'token_length': len(token_from_env) if token_from_env else 0,
+        'token_type': type(token_from_env).__name__,
+        'starts_with_hf': token_from_env.startswith('hf_') if token_from_env else False,
+        'has_spaces': ' ' in token_from_env if token_from_env else False,
+        'has_newlines': '\n' in token_from_env if token_from_env else False,
+        'is_base64': is_base64,
+        'decoded_if_base64': decoded if is_base64 else "Not base64",
+        'all_env_vars': dict(os.environ)
+    }
+    
+    result_html = f"""
+    <h1>🔍 Debug Token RAW</h1>
+    
+    <h2>Token Analysis:</h2>
+    <table border="1" style="border-collapse: collapse; width: 100%;">
+        <tr><th>Property</th><th>Value</th></tr>
+        <tr><td>Raw Token</td><td><pre>{token_from_env[:50] if token_from_env else 'None'}...</pre></td></tr>
+        <tr><td>Length</td><td>{token_analysis['token_length']}</td></tr>
+        <tr><td>Type</td><td>{token_analysis['token_type']}</td></tr>
+        <tr><td>Starts with hf_</td><td>{token_analysis['starts_with_hf']}</td></tr>
+        <tr><td>Has spaces</td><td>{token_analysis['has_spaces']}</td></tr>
+        <tr><td>Has newlines</td><td>{token_analysis['has_newlines']}</td></tr>
+        <tr><td>Is base64?</td><td>{token_analysis['is_base64']}</td></tr>
+        <tr><td>Decoded (if base64)</td><td><pre>{decoded[:50] if decoded else 'N/A'}...</pre></td></tr>
+    </table>
+    
+    <h2>Environment Variables (HF related):</h2>
+    <ul>
+    """
+    
+    for key, value in os.environ.items():
+        if 'HF' in key.upper() or 'HUGGING' in key.upper():
+            result_html += f"<li><strong>{key}</strong>: {value[:50]}...</li>"
+    
+    result_html += """
+    </ul>
+    
+    <h2>Test Headers:</h2>
+    <p>Current header: <code>Authorization: Bearer {token}</code></p>
+    <p>Alternative header: <code>Authorization: token {token}</code></p>
+    
+    <hr>
+    <p><a href="/test-token">🔐 Test tokena</a></p>
+    <p><a href="/test-hardcoded-token">🔧 Test hardcoded token</a></p>
+    <p><a href="/">🏠 Powrót do chatbota</a></p>
+    """
+    
+    return result_html
+
+@app.route('/test-hardcoded-token')
+def test_hardcoded_token():
+    """Test z hardcoded tokenem (tylko do debugowania)"""
+    # UWAGA: To tylko do testów - w produkcji usuń ten endpoint!
+    
+    # Tutaj możesz wstawić token bezpośrednio do testów
+    # HARDCODED_TOKEN = "hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # Wstaw swój token tutaj
+    
+    return f"""
+    <h1>🔧 Test Hardcoded Token</h1>
+    <p><strong>UWAGA:</strong> Ten endpoint służy tylko do testów!</p>
+    <p>Aby przetestować:</p>
+    <ol>
+        <li>Odkomentuj linię z HARDCODED_TOKEN w kodzie</li>
+        <li>Wstaw swój token</li>
+        <li>Zacommituj i zredeploy</li>
+        <li>Test tutaj</li>
+        <li>Usuń token z kodu!</li>
+    </ol>
+    
+    <p><strong>Token z environment:</strong> {'✅' if HF_TOKEN and HF_TOKEN != 'TWÓJ_TOKEN_HF' else '❌'}</p>
+    <p><strong>Token length:</strong> {len(HF_TOKEN) if HF_TOKEN else 0}</p>
+    
+    <hr>
+    <p><a href="/debug-token-raw">🔍 Debug Raw Token</a></p>
+    <p><a href="/test-token">🔐 Test tokena</a></p>
+    <p><a href="/">🏠 Powrót do chatbota</a></p>
+    """
+
+@app.route('/test-token-formats')
+def test_token_formats():
+    """Test różnych formatów tokena"""
+    if not HF_TOKEN or HF_TOKEN == 'TWÓJ_TOKEN_HF':
+        return """
+        <h1>❌ Brak tokena do testowania</h1>
+        <p>Ustaw token w zmiennej środowiskowej HF_TOKEN</p>
+        <p><a href="/">🏠 Powrót do chatbota</a></p>
+        """
+    
+    # Testuj różne formaty nagłówka autoryzacji
+    test_formats = [
+        ("Bearer {token}", f"Bearer {HF_TOKEN}"),
+        ("token {token}", f"token {HF_TOKEN}"),
+        ("{token}", HF_TOKEN),
+        ("Bearer: {token}", f"Bearer: {HF_TOKEN}"),
+    ]
+    
+    results = []
+    
+    for format_name, header_value in test_formats:
+        try:
+            test_headers = {"Authorization": header_value}
+            
+            response = requests.get(
+                "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium",
+                headers=test_headers,
+                timeout=10
+            )
+            
+            status = "✅ OK" if response.status_code == 200 else f"❌ {response.status_code}"
+            
+            results.append({
+                'format': format_name,
+                'header': header_value[:50] + "..." if len(header_value) > 50 else header_value,
+                'status': status,
+                'response': response.text[:100]
+            })
+            
+        except Exception as e:
+            results.append({
+                'format': format_name,
+                'header': header_value[:50] + "..." if len(header_value) > 50 else header_value,
+                'status': f"❌ Error: {str(e)[:50]}",
+                'response': str(e)[:100]
+            })
+    
+    result_html = """
+    <h1>🔧 Test formatów tokena</h1>
+    <table border="1" style="border-collapse: collapse; width: 100%;">
+        <tr>
+            <th>Format</th>
+            <th>Header Value</th>
+            <th>Status</th>
+            <th>Response</th>
+        </tr>
+    """
+    
+    for result in results:
+        result_html += f"""
+        <tr>
+            <td>{result['format']}</td>
+            <td><code>{result['header']}</code></td>
+            <td>{result['status']}</td>
+            <td><pre>{result['response']}</pre></td>
+        </tr>
+        """
+    
+    result_html += """
+    </table>
+    
+    <p><strong>Instrukcje:</strong> Jeśli któryś format zwraca ✅ OK, możemy go użyć w kodzie.</p>
+    
+    <hr>
+    <p><a href="/debug-token-raw">🔍 Debug Raw Token</a></p>
+    <p><a href="/test-token">🔐 Test tokena</a></p>
     <p><a href="/">🏠 Powrót do chatbota</a></p>
     """
     
