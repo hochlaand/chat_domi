@@ -118,7 +118,11 @@ def chat():
 
 if __name__ == '__main__':
     # Pobierz port z zmiennej środowiskowej (dla hostingu w chmurze)
-    port = int(os.getenv('PORT', 5000))
+    try:
+        port = int(os.getenv('PORT', 5000))
+    except (ValueError, TypeError):
+        port = 5000  # Domyślny port jeśli PORT nie jest liczbą
+    
     debug_mode = os.getenv('DEBUG', 'True').lower() == 'true'
     
     print("🤖 Chatbot dla Dominiki uruchamia się...")
