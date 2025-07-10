@@ -473,22 +473,47 @@ def test_hardcoded_token():
     # UWAGA: To tylko do testów - w produkcji usuń ten endpoint!
     
     # Tutaj możesz wstawić token bezpośrednio do testów
-    # HARDCODED_TOKEN = "hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # Wstaw swój token tutaj
+    HARDCODED_TOKEN = "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"  # Poprawny token do testów
+    
+    # Test z hardcoded tokenem
+    try:
+        test_headers = {"Authorization": f"Bearer {HARDCODED_TOKEN}"}
+        
+        response = requests.get(
+            "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium",
+            headers=test_headers,
+            timeout=10
+        )
+        
+        hardcoded_test_result = f"""
+        <h2>🔧 Test Hardcoded Token:</h2>
+        <p><strong>Hardcoded Token:</strong> {HARDCODED_TOKEN[:15]}...</p>
+        <p><strong>Status Code:</strong> {response.status_code}</p>
+        <p><strong>Response:</strong></p>
+        <pre>{response.text[:200]}</pre>
+        """
+        
+        if response.status_code == 200:
+            hardcoded_test_result += "<p>✅ <strong>Hardcoded token DZIAŁA!</strong></p>"
+        else:
+            hardcoded_test_result += f"<p>❌ <strong>Hardcoded token też nie działa: {response.status_code}</strong></p>"
+    
+    except Exception as e:
+        hardcoded_test_result = f"""
+        <h2>❌ Błąd testu hardcoded:</h2>
+        <p>{str(e)}</p>
+        """
     
     return f"""
     <h1>🔧 Test Hardcoded Token</h1>
     <p><strong>UWAGA:</strong> Ten endpoint służy tylko do testów!</p>
-    <p>Aby przetestować:</p>
-    <ol>
-        <li>Odkomentuj linię z HARDCODED_TOKEN w kodzie</li>
-        <li>Wstaw swój token</li>
-        <li>Zacommituj i zredeploy</li>
-        <li>Test tutaj</li>
-        <li>Usuń token z kodu!</li>
-    </ol>
     
+    <h2>Porównanie tokenów:</h2>
     <p><strong>Token z environment:</strong> {'✅' if HF_TOKEN and HF_TOKEN != 'TWÓJ_TOKEN_HF' else '❌'}</p>
-    <p><strong>Token length:</strong> {len(HF_TOKEN) if HF_TOKEN else 0}</p>
+    <p><strong>Env token:</strong> {HF_TOKEN[:15] if HF_TOKEN else 'Brak'}...</p>
+    <p><strong>Hardcoded token:</strong> {HARDCODED_TOKEN[:15]}...</p>
+    
+    {hardcoded_test_result}
     
     <hr>
     <p><a href="/debug-token-raw">🔍 Debug Raw Token</a></p>
