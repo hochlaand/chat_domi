@@ -11,9 +11,10 @@ app = Flask(__name__)
 
 # Konfiguracja Hugging Face API
 # Opcje modeli (odkomentuj żądany):
-API_URL = "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill"  # Zmieniony na bardziej stabilny
-# API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"  # Oryginalny
-# API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-small"  # Alternatywny 2
+API_URL = "https://api-inference.huggingface.co/models/openai-community/gpt2"  # Zmieniony na stabilny GPT-2
+# API_URL = "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill"  # Blenderbot
+# API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"  # DialoGPT
+# API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-small"  # Flan-T5
 
 # Próba odczytania tokena z różnych źródeł
 HF_TOKEN = None
@@ -73,27 +74,49 @@ def generuj_odpowiedz(pytanie):
         "Wybacz, ale nasze rozmowy są tak fajne, że nie mogę się skupić! 🤗"
     ]
     
-    prompt = (
-        "Jesteś bardzo zabawnym, romantycznym, przyjaznym i pozytywnym chatbotem. "
-        "Odpowiadasz na pytania Dominiki w sposób, który ją rozśmieszy, pozwiedzi i sprawi radość. "
-        "Dominika to 23-letnia tancerka pracująca w przedszkolu. Ma 164 cm wzrostu, "
-        "piękne ciemne włosy, wspaniałą sylwetkę i jest bardzo sympatyczna. "
-        "Czasem brakuje jej energii, ale świetnie tańczy i jest bardzo urocza. "
-        "Zawsze dodawaj pozytywne komentarze i emotikonki. Odpowiadaj po polsku jak do dobrej znajomej. "
-        "Pytanie: " + pytanie + "\n"
-        "Odpowiedź:"
-    )
+    # Prompt dostosowany do rodzaju modelu
+    if "gpt2" in API_URL.lower():
+        prompt = (
+            "Jestem przyjaznym chatbotem dla Dominiki. "
+            "Dominika to urocza 23-letnia tancerka. "
+            f"Pytanie: {pytanie}\n"
+            "Odpowiedź:"
+        )
+    else:
+        prompt = (
+            "Jesteś bardzo zabawnym, romantycznym, przyjaznym i pozytywnym chatbotem. "
+            "Odpowiadasz na pytania Dominiki w sposób, który ją rozśmieszy, pozwiedzi i sprawi radość. "
+            "Dominika to 23-letnia tancerka pracująca w przedszkolu. Ma 164 cm wzrostu, "
+            "piękne ciemne włosy, wspaniałą sylwetkę i jest bardzo sympatyczna. "
+            "Czasem brakuje jej energii, ale świetnie tańczy i jest bardzo urocza. "
+            "Zawsze dodawaj pozytywne komentarze i emotikonki. Odpowiadaj po polsku jak do dobrej znajomej. "
+            "Pytanie: " + pytanie + "\n"
+            "Odpowiedź:"
+        )
     
     try:
-        payload = {
-            "inputs": prompt,
-            "parameters": {
-                "max_new_tokens": 100,
-                "temperature": 0.8,
-                "do_sample": True,
-                "top_p": 0.9
+        # Różne parametry w zależności od modelu
+        if "gpt2" in API_URL.lower():
+            payload = {
+                "inputs": prompt,
+                "parameters": {
+                    "max_length": 150,
+                    "temperature": 0.7,
+                    "do_sample": True,
+                    "top_p": 0.9,
+                    "pad_token_id": 50256  # GPT-2 pad token
+                }
             }
-        }
+        else:
+            payload = {
+                "inputs": prompt,
+                "parameters": {
+                    "max_new_tokens": 100,
+                    "temperature": 0.8,
+                    "do_sample": True,
+                    "top_p": 0.9
+                }
+            }
         
         print(f"🔍 Wysyłam zapytanie do API: {prompt[:50]}...")
         response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
@@ -104,8 +127,18 @@ def generuj_odpowiedz(pytanie):
             result = response.json()
             print(f"✅ Otrzymano odpowiedź: {result}")
             if isinstance(result, list) and len(result) > 0:
-                tekst = result[0].get('generated_text', '').replace(prompt, '').strip()
-                if tekst and len(tekst) > 10:
+                # Dla GPT-2 odpowiedź jest w 'generated_text'
+                tekst = result[0].get('generated_text', '')
+                
+                # Usuń oryginalny prompt z odpowiedzi
+                if tekst.startswith(prompt):
+                    tekst = tekst[len(prompt):].strip()
+                
+                # Dla GPT-2 może być też tylko część po "Odpowiedź:"
+                if "Odpowiedź:" in tekst:
+                    tekst = tekst.split("Odpowiedź:")[-1].strip()
+                
+                if tekst and len(tekst) > 5:
                     print(f"🎉 Zwracam odpowiedź: {tekst}")
                     return tekst
         else:
@@ -155,6 +188,7 @@ def debug():
         <li><a href="/test-api">🧪 Test API</a> - test pełnego API</li>
         <li><a href="/test-models">🤖 Test modeli</a> - test różnych modeli</li>
         <li><a href="/test-simple-api">🧪 Test Simple API</a> - test z najprostszym zapytaniem</li>
+        <li><a href="/test-gpt2">🤖 Test GPT-2</a> - test modeli GPT-2</li>
     </ul>
     
     <h2>📁 Wszystkie pliki na serwerze:</h2>
@@ -313,6 +347,8 @@ def test_token():
 def test_models():
     """Test różnych modeli do chatbota"""
     models_to_test = [
+        "openai-community/gpt2",        # Stabilny GPT-2
+        "gpt2",                         # Alternatywny GPT-2
         "facebook/blenderbot-400M-distill",
         "microsoft/DialoGPT-medium", 
         "facebook/blenderbot-small-90M",
@@ -474,10 +510,11 @@ def test_hardcoded_token():
     # UWAGA: To tylko do testów - w produkcji usuń ten endpoint!
     
     # Tutaj możesz wstawić token bezpośrednio do testów
-    HARDCODED_TOKEN = "TOKEN_TEST"  # Wstaw nowy token z HF
+    # Spróbuj najpierw z pliku .env, potem hardcoded
+    HARDCODED_TOKEN = os.getenv('HF_TOKEN', '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')
     
-    # UWAGA: Najpierw wygeneruj nowy token na https://huggingface.co/settings/tokens
-    # Potem zastąp "WSTAW_TUTAJ_NOWY_TOKEN" prawdziwym tokenem
+    # Jeśli chcesz przetestować inny token, odkomentuj poniżej:
+    # HARDCODED_TOKEN = "hf_NOWY_TOKEN_TUTAJ"
     
     # Test z hardcoded tokenem
     try:
@@ -610,20 +647,25 @@ def test_token_formats():
 def test_simple_api():
     """Test z najprostszym możliwym zapytaniem"""
     
-    # Użyj nowego tokena gdy go uzyskasz
-    TEST_TOKEN = "WSTAW_TUTAJ_NOWY_TOKEN"  # Zastąp prawdziwym tokenem
+    # Użyj nowego tokena gdy go uzyskasz - spróbuj z .env
+    TEST_TOKEN = os.getenv('HF_TOKEN', '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')
     
-    if TEST_TOKEN == "WSTAW_TUTAJ_NOWY_TOKEN":
+    # Jeśli chcesz przetestować inny token, odkomentuj:
+    # TEST_TOKEN = "hf_NOWY_TOKEN_TUTAJ"
+    
+    if TEST_TOKEN == "WSTAW_TUTAJ_NOWY_TOKEN" or not TEST_TOKEN:
         return """
-        <h1>⚠️ Wstaw nowy token</h1>
-        <p>Wygeneruj nowy token na HF i wstaw go w kodzie</p>
+        <h1>⚠️ Konfiguracja tokena</h1>
+        <p>Token odczytany z .env lub ustaw nowy w kodzie</p>
+        <p><strong>Aktualny token:</strong> {}</p>
         <p><a href="https://huggingface.co/settings/tokens" target="_blank">🔗 Hugging Face Tokens</a></p>
-        """
+        """.format(TEST_TOKEN[:15] + "..." if TEST_TOKEN else "Brak")
     
     # Testuj różne proste modele
     simple_models = [
-        "gpt2",
-        "distilgpt2", 
+        "openai-community/gpt2",       # Stabilny GPT-2
+        "gpt2",                        # Podstawowy GPT-2
+        "distilgpt2",                  # Lżejszy GPT-2
         "microsoft/DialoGPT-small",
         "facebook/blenderbot-small-90M"
     ]
@@ -690,6 +732,121 @@ def test_simple_api():
     <hr>
     <p><a href="/test-hardcoded-token">🔧 Test Hardcoded Token</a></p>
     <p><a href="/debug-token-raw">🔍 Debug Raw Token</a></p>
+    <p><a href="/">🏠 Powrót do chatbota</a></p>
+    """
+    
+    return result_html
+
+@app.route('/test-gpt2')
+def test_gpt2():
+    """Test specjalnie dla modelu GPT-2"""
+    
+    # Test różnych wariantów GPT-2
+    gpt2_models = [
+        "openai-community/gpt2",
+        "gpt2",
+        "distilgpt2",
+        "openai-community/gpt2-medium",
+        "openai-community/gpt2-large"
+    ]
+    
+    # Prosty prompt dla GPT-2
+    test_prompt = "Cześć! Jestem przyjaznym chatbotem. Jak się masz?"
+    
+    results = []
+    
+    for model in gpt2_models:
+        try:
+            url = f"https://api-inference.huggingface.co/models/{model}"
+            headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+            
+            # Parametry dostosowane do GPT-2
+            payload = {
+                "inputs": test_prompt,
+                "parameters": {
+                    "max_length": 100,
+                    "temperature": 0.7,
+                    "do_sample": True,
+                    "top_p": 0.9,
+                    "pad_token_id": 50256
+                }
+            }
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=15)
+            
+            status = "✅ OK" if response.status_code == 200 else f"❌ {response.status_code}"
+            
+            # Sparsuj odpowiedź
+            generated_text = "Brak odpowiedzi"
+            if response.status_code == 200:
+                try:
+                    json_data = response.json()
+                    if isinstance(json_data, list) and len(json_data) > 0:
+                        generated_text = json_data[0].get('generated_text', 'Brak tekstu')
+                        # Usuń oryginalny prompt z odpowiedzi
+                        if generated_text.startswith(test_prompt):
+                            generated_text = generated_text[len(test_prompt):].strip()
+                except:
+                    generated_text = "Błąd parsowania JSON"
+            
+            results.append({
+                'model': model,
+                'status': status,
+                'response_code': response.status_code,
+                'generated_text': generated_text[:200],
+                'raw_response': response.text[:200]
+            })
+            
+        except Exception as e:
+            results.append({
+                'model': model,
+                'status': f"❌ Error: {str(e)[:50]}",
+                'response_code': 'Exception',
+                'generated_text': str(e)[:100],
+                'raw_response': str(e)[:200]
+            })
+    
+    result_html = f"""
+    <h1>🤖 Test GPT-2 Models</h1>
+    <p><strong>Test Prompt:</strong> {test_prompt}</p>
+    <p><strong>Token Status:</strong> {'✅ Set' if HF_TOKEN and HF_TOKEN != 'TWÓJ_TOKEN_HF' else '❌ Not set'}</p>
+    
+    <h2>Wyniki:</h2>
+    <table border="1" style="border-collapse: collapse; width: 100%;">
+        <tr>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Response Code</th>
+            <th>Generated Text</th>
+            <th>Raw Response</th>
+        </tr>
+    """
+    
+    for result in results:
+        result_html += f"""
+        <tr>
+            <td>{result['model']}</td>
+            <td>{result['status']}</td>
+            <td>{result['response_code']}</td>
+            <td><pre style="white-space: pre-wrap; max-width: 250px; overflow: hidden;">{result['generated_text']}</pre></td>
+            <td><pre style="white-space: pre-wrap; max-width: 250px; overflow: hidden;">{result['raw_response']}</pre></td>
+        </tr>
+        """
+    
+    result_html += """
+    </table>
+    
+    <p><strong>Instrukcje:</strong></p>
+    <ol>
+        <li>Model z ✅ OK można użyć w chatbocie</li>
+        <li>Jeśli GPT-2 działa - zmień API_URL na działający model</li>
+        <li>GPT-2 jest stabilny i popularny - powinien działać</li>
+    </ol>
+    
+    <hr>
+    <p><a href="/test-simple-api">🧪 Test Simple API</a></p>
+    <p><a href="/test-models">🤖 Test wszystkich modeli</a></p>
+    <p><a href="/debug">🛠️ Debug Info</a></p>
     <p><a href="/">🏠 Powrót do chatbota</a></p>
     """
     
