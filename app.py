@@ -4,54 +4,38 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 
+# Próba importu Google Gemini (może nie być zainstalowane lokalnie)
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    print("⚠️ google-generativeai nie zainstalowane - używam Hugging Face")
+    GEMINI_AVAILABLE = False
+
 # Załaduj zmienne środowiskowe z pliku .env
 load_dotenv()
 
 app = Flask(__name__)
 
-# Konfiguracja Hugging Face API
-# Opcje modeli (odkomentuj żądany):
-API_URL = "https://api-inference.huggingface.co/models/openai-community/gpt2"  # Zmieniony na stabilny GPT-2
-# API_URL = "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill"  # Blenderbot
-# API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"  # DialoGPT
-# API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-small"  # Flan-T5
+# Konfiguracja Google Gemini AI
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+if GEMINI_API_KEY and GEMINI_AVAILABLE:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-pro')
+    print(f"✅ Gemini API skonfigurowane (klucz: {GEMINI_API_KEY[:10]}...)")
+    USE_GEMINI = True
+else:
+    print("⚠️ Używam Hugging Face jako głównego API")
+    model = None
+    USE_GEMINI = False
 
-# Próba odczytania tokena z różnych źródeł
-HF_TOKEN = None
-
-# 1. Próba z zmiennej środowiskowej
-if os.getenv('HF_TOKEN') and os.getenv('HF_TOKEN') != 'TWÓJ_TOKEN_HF':
-    HF_TOKEN = os.getenv('HF_TOKEN').strip()
-    print(f"✅ Token z env variable (długość: {len(HF_TOKEN)})")
-
-# 2. Próba z pliku config.py (jeśli istnieje)
-if not HF_TOKEN:
-    try:
-        import config  # type: ignore
-        if hasattr(config, 'HF_TOKEN_ALT') and config.HF_TOKEN_ALT != 'TWÓJ_TOKEN_TUTAJ':
-            HF_TOKEN = config.HF_TOKEN_ALT.strip()
-            print(f"✅ Token z config.py (długość: {len(HF_TOKEN)})")
-    except (ImportError, AttributeError):
-        print("⚠️  Brak pliku config.py lub tokena w config.py")
-
-# 3. Fallback do zmiennej środowiskowej (nawet jeśli pusta)
-if not HF_TOKEN:
-    HF_TOKEN = os.getenv('HF_TOKEN', 'TWÓJ_TOKEN_HF')
-
-# Sprawdzenie i czyszczenie tokena
+# Backup/Alternative - Hugging Face API
+API_URL = "https://api-inference.huggingface.co/models/openai-community/gpt2"
+HF_TOKEN = os.getenv('HF_TOKEN')
 if HF_TOKEN:
-    # Usuń możliwe spacje, nowe linie, tabulatory
     HF_TOKEN = HF_TOKEN.strip().replace('\n', '').replace('\r', '').replace('\t', '')
-    
-    # Sprawdź czy token ma poprawny format
-    if not HF_TOKEN.startswith('hf_'):
-        print(f"⚠️  Token nie zaczyna się od 'hf_': {HF_TOKEN[:10]}...")
-    
-    # Sprawdź długość tokena (typowo 37 znaków)
-    if len(HF_TOKEN) < 30:
-        print(f"⚠️  Token wydaje się za krótki: {len(HF_TOKEN)} znaków")
 
-headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+headers = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
 
 # Sprawdzenie czy token jest ustawiony
 if HF_TOKEN == 'TWÓJ_TOKEN_HF' or not HF_TOKEN:
@@ -64,7 +48,7 @@ else:
     print(f"🔗 Używany model: {API_URL}")
 
 def generuj_odpowiedz(pytanie):
-    """Generuje zabawną i miłą odpowiedź dla znajomej"""
+    """Generuje zabawną i miłą odpowiedź dla znajomej - używa Gemini jako główne API"""
     
     # Lista gotowych komplementów na wypadek problemów z API
     backup_responses = [
@@ -74,60 +58,109 @@ def generuj_odpowiedz(pytanie):
         "Wybacz, ale nasze rozmowy są tak fajne, że nie mogę się skupić! 🤗"
     ]
     
-    # Prompt dostosowany do rodzaju modelu
-    if "gpt2" in API_URL.lower():
-        prompt = (
-            "Jestem przyjaznym chatbotem dla Dominiki. "
-            "Dominika to urocza 23-letnia tancerka. "
-            f"Pytanie: {pytanie}\n"
-            "Odpowiedź:"
-        )
+    # Spróbuj najpierw Gemini (jeśli dostępne)
+    if USE_GEMINI and model:
+        try:
+            return generuj_odpowiedz_gemini(pytanie)
+        except Exception as e:
+            print(f"❌ Błąd Gemini: {e}, przechodzę na backup HF")
+    
+    # Fallback do Hugging Face
+    return generuj_odpowiedz_hf(pytanie)
+
+def generuj_odpowiedz_gemini(pytanie):
+    """Generuje odpowiedź używając Google Gemini"""
+    
+    # Spersonalizowany prompt dla Dominiki
+    prompt = f"""
+    Jesteś bardzo zabawnym, romantycznym, przyjaznym i pozytywnym chatbotem stworzonym specjalnie dla Dominiki.
+    
+    O Dominice:
+    - Ma 23 lata
+    - Jest tancerką i pracuje w przedszkolu
+    - Ma 164 cm wzrostu
+    - Ma piękne ciemne włosy i wspaniałą sylwetkę
+    - Jest bardzo sympatyczna i urocza
+    - Świetnie tańczy, ale czasem brakuje jej energii do aktywności
+    
+    Twoje zadanie:
+    - Odpowiadaj w sposób, który ją rozśmieszy, pocieszy i sprawi radość
+    - Używaj emotikonek i pozytywnych komentarzy
+    - Pisz po polsku jak do dobrej znajomej
+    - Bądź romantyczny ale w sposób przyjazny i zabawny
+    - Doceniaj jej pasję do tańca i pracę z dziećmi
+    - Odpowiedź powinna być krótka (1-3 zdania)
+    
+    Pytanie od Dominiki: {pytanie}
+    
+    Odpowiedz w sposób ciepły, zabawny i pozytywny:
+    """
+    
+    print(f"🤖 Wysyłam zapytanie do Gemini: {pytanie[:50]}...")
+    
+    # Konfiguracja generacji
+    generation_config = {
+        'temperature': 0.8,
+        'top_p': 0.9,
+        'top_k': 40,
+        'max_output_tokens': 200,
+    }
+    
+    response = model.generate_content(
+        prompt,
+        generation_config=generation_config,
+        safety_settings=[
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+        ]
+    )
+    
+    if response.text:
+        odpowiedz = response.text.strip()
+        print(f"✅ Gemini odpowiedź: {odpowiedz[:100]}...")
+        return odpowiedz
     else:
-        prompt = (
-            "Jesteś bardzo zabawnym, romantycznym, przyjaznym i pozytywnym chatbotem. "
-            "Odpowiadasz na pytania Dominiki w sposób, który ją rozśmieszy, pozwiedzi i sprawi radość. "
-            "Dominika to 23-letnia tancerka pracująca w przedszkolu. Ma 164 cm wzrostu, "
-            "piękne ciemne włosy, wspaniałą sylwetkę i jest bardzo sympatyczna. "
-            "Czasem brakuje jej energii, ale świetnie tańczy i jest bardzo urocza. "
-            "Zawsze dodawaj pozytywne komentarze i emotikonki. Odpowiadaj po polsku jak do dobrej znajomej. "
-            "Pytanie: " + pytanie + "\n"
-            "Odpowiedź:"
-        )
+        raise Exception("Gemini zwróciło pustą odpowiedź")
+
+def generuj_odpowiedz_hf(pytanie):
+    """Backup funkcja używająca Hugging Face GPT-2"""
+    
+    backup_responses = [
+        "Przepraszam, mam chwilową przerwę w myśleniu! 😅 Spróbuj ponownie za chwilę.",
+        "Moment, muszę się skupić - za bardzo się śmieję z naszej rozmowy! 😄 Napisz ponownie.",
+        "Oj, chyba jestem tak rozrywkowy, że zapomniałem jak mówić! 😊 Spróbuj jeszcze raz.",
+        "Wybacz, ale nasze rozmowy są tak fajne, że nie mogę się skupić! 🤗"
+    ]
+    
+    # Prompt dostosowany do GPT-2
+    prompt = (
+        "Jestem przyjaznym chatbotem dla Dominiki. "
+        "Dominika to urocza 23-letnia tancerka. "
+        f"Pytanie: {pytanie}\n"
+        "Odpowiedź:"
+    )
     
     try:
-        # Różne parametry w zależności od modelu
-        if "gpt2" in API_URL.lower():
-            payload = {
-                "inputs": prompt,
-                "parameters": {
-                    "max_length": 150,
-                    "temperature": 0.7,
-                    "do_sample": True,
-                    "top_p": 0.9,
-                    "pad_token_id": 50256  # GPT-2 pad token
-                }
+        payload = {
+            "inputs": prompt,
+            "parameters": {
+                "max_length": 150,
+                "temperature": 0.7,
+                "do_sample": True,
+                "top_p": 0.9,
+                "pad_token_id": 50256
             }
-        else:
-            payload = {
-                "inputs": prompt,
-                "parameters": {
-                    "max_new_tokens": 100,
-                    "temperature": 0.8,
-                    "do_sample": True,
-                    "top_p": 0.9
-                }
-            }
+        }
         
-        print(f"🔍 Wysyłam zapytanie do API: {prompt[:50]}...")
+        print(f"🔍 Wysyłam zapytanie do HF: {prompt[:50]}...")
         response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
         print(f"📊 Status code: {response.status_code}")
-        print(f"📝 Odpowiedź API: {response.text[:200]}...")
         
         if response.status_code == 200:
             result = response.json()
-            print(f"✅ Otrzymano odpowiedź: {result}")
             if isinstance(result, list) and len(result) > 0:
-                # Dla GPT-2 odpowiedź jest w 'generated_text'
                 tekst = result[0].get('generated_text', '')
                 
                 # Usuń oryginalny prompt z odpowiedzi
@@ -139,17 +172,17 @@ def generuj_odpowiedz(pytanie):
                     tekst = tekst.split("Odpowiedź:")[-1].strip()
                 
                 if tekst and len(tekst) > 5:
-                    print(f"🎉 Zwracam odpowiedź: {tekst}")
+                    print(f"🎉 Zwracam odpowiedź HF: {tekst}")
                     return tekst
         else:
-            print(f"❌ Błąd API: {response.status_code} - {response.text}")
+            print(f"❌ Błąd HF API: {response.status_code} - {response.text}")
         
         # Fallback do gotowych odpowiedzi
         import random
         return random.choice(backup_responses)
         
     except Exception as e:
-        print(f"💥 Błąd API: {e}")
+        print(f"💥 Błąd HF API: {e}")
         import random
         return random.choice(backup_responses)
 
@@ -172,23 +205,22 @@ def debug():
     index_exist = os.path.exists('templates/index.html')
     
     debug_info = f"""
-    <h1>🛠️ Debug Info</h1>
+    <h1>🛠️ Debug Info - Gemini Edition</h1>
     <p><strong>Folder templates istnieje:</strong> {templates_exist}</p>
     <p><strong>Plik templates/index.html istnieje:</strong> {index_exist}</p>
-    <p><strong>HF_TOKEN ustawiony:</strong> {HF_TOKEN != 'TWÓJ_TOKEN_HF' and HF_TOKEN is not None}</p>
-    <p><strong>HF_TOKEN długość:</strong> {len(HF_TOKEN) if HF_TOKEN else 0}</p>
-    <p><strong>API URL:</strong> {API_URL}</p>
+    <p><strong>Gemini API:</strong> {'✅ Dostępny' if USE_GEMINI else '❌ Niedostępny'}</p>
+    <p><strong>Gemini API Key długość:</strong> {len(GEMINI_API_KEY) if GEMINI_API_KEY else 0}</p>
+    <p><strong>HF Token (backup):</strong> {'✅ Ustawiony' if HF_TOKEN and HF_TOKEN != 'TWÓJ_TOKEN_HF' else '❌ Brak'}</p>
+    <p><strong>Główne API:</strong> {'🤖 Google Gemini' if USE_GEMINI else '🔄 Hugging Face GPT-2'}</p>
     
     <h2>🔍 Endpointy diagnostyczne:</h2>
     <ul>
-        <li><a href="/debug-token-raw">🔍 Debug Raw Token</a> - szczegółowy debug tokena</li>
-        <li><a href="/test-token-formats">🔧 Test formatów tokena</a> - test różnych formatów autoryzacji</li>
-        <li><a href="/test-hardcoded-token">🔨 Test hardcoded token</a> - test z tokenem w kodzie</li>
-        <li><a href="/test-token">🔐 Test tokena</a> - standardowy test</li>
-        <li><a href="/test-api">🧪 Test API</a> - test pełnego API</li>
-        <li><a href="/test-models">🤖 Test modeli</a> - test różnych modeli</li>
-        <li><a href="/test-simple-api">🧪 Test Simple API</a> - test z najprostszym zapytaniem</li>
-        <li><a href="/test-gpt2">🤖 Test GPT-2</a> - test modeli GPT-2</li>
+        <li><a href="/test-gemini">🤖 Test Gemini</a> - test głównego API Google</li>
+        <li><a href="/test-gemini-simple">🧪 Test Gemini Simple</a> - prosty test Gemini</li>
+        <li><a href="/test-comparison">⚖️ Porównanie</a> - Gemini vs HF</li>
+        <li><a href="/test-hf-backup">🔄 Test HF Backup</a> - test zapasowego HF</li>
+        <li><a href="/debug-token-raw">🔍 Debug Raw Token</a> - szczegółowy debug tokena HF</li>
+        <li><a href="/test-token">🔐 Test tokena HF</a> - standardowy test HF</li>
     </ul>
     
     <h2>📁 Wszystkie pliki na serwerze:</h2>
@@ -852,6 +884,249 @@ def test_gpt2():
     
     return result_html
 
+@app.route('/test-gemini')
+def test_gemini():
+    """Test głównego API Gemini"""
+    
+    if not USE_GEMINI:
+        return f"""
+        <h1>❌ Gemini niedostępny</h1>
+        <p><strong>Gemini Available:</strong> {GEMINI_AVAILABLE}</p>
+        <p><strong>API Key:</strong> {'Set' if GEMINI_API_KEY else 'Not set'}</p>
+        <p><strong>Powód:</strong> {'Brak klucza API' if not GEMINI_API_KEY else 'Biblioteka nie zainstalowana'}</p>
+        
+        <h2>Instrukcje:</h2>
+        <ol>
+            <li>Zainstaluj: <code>pip install google-generativeai</code></li>
+            <li>Ustaw GEMINI_API_KEY w .env</li>
+            <li>Restartuj aplikację</li>
+        </ol>
+        
+        <p><a href="/test-hf-backup">🔄 Test HF Backup</a></p>
+        <p><a href="/">🏠 Powrót do chatbota</a></p>
+        """
+    
+    test_questions = [
+        "Cześć! Jak się masz?",
+        "Jestem zmęczona po pracy w przedszkolu",
+        "Chciałabym potańczyć, ale nie mam energii",
+        "Powiedz mi coś miłego"
+    ]
+    
+    results = []
+    
+    for question in test_questions:
+        try:
+            start_time = datetime.now()
+            response = generuj_odpowiedz_gemini(question)
+            end_time = datetime.now()
+            response_time = (end_time - start_time).total_seconds()
+            
+            results.append({
+                'question': question,
+                'response': response,
+                'status': '✅ OK',
+                'time': f"{response_time:.2f}s"
+            })
+            
+        except Exception as e:
+            results.append({
+                'question': question,
+                'response': f"Błąd: {str(e)}",
+                'status': '❌ Error',
+                'time': 'N/A'
+            })
+    
+    result_html = f"""
+    <h1>🤖 Test Gemini API</h1>
+    <p><strong>API Key Status:</strong> {'✅ Set' if GEMINI_API_KEY else '❌ Not set'}</p>
+    <p><strong>API Key:</strong> {GEMINI_API_KEY[:15] if GEMINI_API_KEY else 'Brak'}...</p>
+    
+    <h2>Testy konwersacyjne:</h2>
+    <table border="1" style="border-collapse: collapse; width: 100%;">
+        <tr>
+            <th>Pytanie</th>
+            <th>Odpowiedź Gemini</th>
+            <th>Status</th>
+            <th>Czas</th>
+        </tr>
+    """
+    
+    for result in results:
+        result_html += f"""
+        <tr>
+            <td>{result['question']}</td>
+            <td style="max-width: 400px;"><pre style="white-space: pre-wrap;">{result['response']}</pre></td>
+            <td>{result['status']}</td>
+            <td>{result['time']}</td>
+        </tr>
+        """
+    
+    result_html += """
+    </table>
+    
+    <hr>
+    <p><a href="/test-gemini-simple">🧪 Test Simple</a></p>
+    <p><a href="/test-comparison">⚖️ Porównanie</a></p>
+    <p><a href="/debug">🛠️ Debug</a></p>
+    <p><a href="/">🏠 Powrót do chatbota</a></p>
+    """
+    
+    return result_html
+
+@app.route('/test-gemini-simple')
+def test_gemini_simple():
+    """Prosty test Gemini"""
+    
+    if not USE_GEMINI:
+        return """
+        <h1>❌ Gemini niedostępny</h1>
+        <p>Zainstaluj google-generativeai i ustaw GEMINI_API_KEY</p>
+        <p><a href="/debug">🛠️ Debug</a></p>
+        """
+    
+    try:
+        # Bardzo prosty test
+        simple_prompt = "Powiedz 'Cześć Dominika!' po polsku"
+        
+        response = model.generate_content(simple_prompt)
+        
+        result_html = f"""
+        <h1>🧪 Test Simple Gemini</h1>
+        <p><strong>API Key:</strong> {GEMINI_API_KEY[:15]}...</p>
+        <p><strong>Prompt:</strong> {simple_prompt}</p>
+        
+        <h2>Odpowiedź:</h2>
+        <p><strong>Status:</strong> ✅ Sukces</p>
+        <p><strong>Response Text:</strong></p>
+        <pre>{response.text if response.text else 'Brak tekstu'}</pre>
+        
+        <h2>Szczegóły response:</h2>
+        <pre>Type: {type(response)}
+Text length: {len(response.text) if response.text else 0}</pre>
+        
+        <hr>
+        <p><a href="/test-gemini">🤖 Test pełny</a></p>
+        <p><a href="/">🏠 Powrót do chatbota</a></p>
+        """
+        
+        return result_html
+        
+    except Exception as e:
+        return f"""
+        <h1>❌ Błąd Simple Test</h1>
+        <p><strong>Błąd:</strong> {str(e)}</p>
+        <p><strong>Typ błędu:</strong> {type(e).__name__}</p>
+        
+        <h2>Możliwe przyczyny:</h2>
+        <ul>
+            <li>Nieprawidłowy API key</li>
+            <li>Brak dostępu do internetu</li>
+            <li>Ograniczenia API</li>
+            <li>Błąd w bibliotece google-generativeai</li>
+        </ul>
+        
+        <p><a href="/debug">🛠️ Debug</a></p>
+        <p><a href="/test-hf-backup">🔄 Test HF Backup</a></p>
+        """
+
+@app.route('/test-comparison')
+def test_comparison():
+    """Porównanie Gemini vs Hugging Face"""
+    
+    test_question = "Cześć! Powiedz mi coś miłego"
+    
+    # Test Gemini
+    try:
+        if USE_GEMINI:
+            gemini_response = generuj_odpowiedz_gemini(test_question)
+            gemini_status = "✅ OK"
+        else:
+            gemini_response = "Gemini niedostępny - brak biblioteki lub klucza API"
+            gemini_status = "❌ Niedostępny"
+    except Exception as e:
+        gemini_response = f"Błąd: {str(e)}"
+        gemini_status = "❌ Error"
+    
+    # Test HF Backup
+    try:
+        hf_response = generuj_odpowiedz_hf(test_question)
+        hf_status = "✅ OK"
+    except Exception as e:
+        hf_response = f"Błąd: {str(e)}"
+        hf_status = "❌ Error"
+    
+    return f"""
+    <h1>⚖️ Porównanie API</h1>
+    <p><strong>Pytanie testowe:</strong> {test_question}</p>
+    <p><strong>Główne API:</strong> {'🤖 Gemini' if USE_GEMINI else '🔄 Hugging Face'}</p>
+    
+    <table border="1" style="border-collapse: collapse; width: 100%;">
+        <tr>
+            <th>API</th>
+            <th>Status</th>
+            <th>Odpowiedź</th>
+        </tr>
+        <tr>
+            <td><strong>🤖 Google Gemini</strong></td>
+            <td>{gemini_status}</td>
+            <td style="max-width: 400px;"><pre style="white-space: pre-wrap;">{gemini_response}</pre></td>
+        </tr>
+        <tr>
+            <td><strong>🔄 Hugging Face (backup)</strong></td>
+            <td>{hf_status}</td>
+            <td style="max-width: 400px;"><pre style="white-space: pre-wrap;">{hf_response}</pre></td>
+        </tr>
+    </table>
+    
+    <h2>Rekomendacja:</h2>
+    <p>Główne API: <strong>Google Gemini</strong> (nowocześniejsze, lepsze konwersacje)</p>
+    <p>Backup: <strong>Hugging Face GPT-2</strong> (w razie problemów z Gemini)</p>
+    
+    <hr>
+    <p><a href="/test-gemini">🤖 Test Gemini</a></p>
+    <p><a href="/test-hf-backup">🔄 Test HF Backup</a></p>
+    <p><a href="/debug">🛠️ Debug</a></p>
+    <p><a href="/">🏠 Powrót do chatbota</a></p>
+    """
+
+@app.route('/test-hf-backup')
+def test_hf_backup():
+    """Test zapasowego API Hugging Face"""
+    
+    test_question = "Cześć! Jak się masz?"
+    
+    try:
+        response = generuj_odpowiedz_hf(test_question)
+        
+        return f"""
+        <h1>🔄 Test HF Backup</h1>
+        <p><strong>HF Token:</strong> {'✅ Set' if HF_TOKEN and HF_TOKEN != 'TWÓJ_TOKEN_HF' else '❌ Not set'}</p>
+        <p><strong>API URL:</strong> {API_URL}</p>
+        <p><strong>Pytanie:</strong> {test_question}</p>
+        
+        <h2>Odpowiedź:</h2>
+        <pre style="white-space: pre-wrap;">{response}</pre>
+        
+        <p><strong>Status:</strong> ✅ Backup działa</p>
+        
+        <hr>
+        <p><a href="/test-comparison">⚖️ Porównanie</a></p>
+        <p><a href="/test-token">🔐 Test tokena HF</a></p>
+        <p><a href="/">🏠 Powrót do chatbota</a></p>
+        """
+        
+    except Exception as e:
+        return f"""
+        <h1>❌ Błąd HF Backup</h1>
+        <p><strong>Błąd:</strong> {str(e)}</p>
+        <p><strong>HF Token:</strong> {'Set' if HF_TOKEN else 'Not set'}</p>
+        
+        <hr>
+        <p><a href="/debug">🛠️ Debug</a></p>
+        <p><a href="/">🏠 Powrót do chatbota</a></p>
+        """
+
 if __name__ == '__main__':
     # Pobierz port z zmiennej środowiskowej (dla hostingu w chmurze)
     try:
@@ -864,8 +1139,18 @@ if __name__ == '__main__':
     print("🤖 Chatbot dla Dominiki uruchamia się...")
     print(f"📁 Folder templates istnieje: {os.path.exists('templates')}")
     print(f"📄 Plik index.html istnieje: {os.path.exists('templates/index.html')}")
+    print(f"🤖 Główne API: {'✅ Google Gemini' if USE_GEMINI else '🔄 Hugging Face GPT-2'}")
+    
+    if USE_GEMINI:
+        print(f"✅ Gemini API Key: {GEMINI_API_KEY[:10]}...{GEMINI_API_KEY[-5:]}")
+    if HF_TOKEN and HF_TOKEN != 'TWÓJ_TOKEN_HF':
+        print(f"🔄 HF Backup dostępny: {HF_TOKEN[:10]}...{HF_TOKEN[-5:]}")
+    
     if debug_mode:
         print(f"🌐 Otwórz http://localhost:{port} w przeglądarce")
+        print(f"🔧 Debug: http://localhost:{port}/debug")
+        if USE_GEMINI:
+            print(f"🤖 Test Gemini: http://localhost:{port}/test-gemini")
     else:
         print("🌐 Aplikacja działa w trybie produkcyjnym")
     
