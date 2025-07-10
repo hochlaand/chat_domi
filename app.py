@@ -111,8 +111,63 @@ def debug():
 @app.route('/test-api')
 def test_api():
     """Test endpoint dla API Hugging Face"""
-    test_response = generuj_odpowiedz("Cześć!")
-    return f"<h1>Test API</h1><p>Odpowiedź: {test_response}</p>"
+    try:
+        # Test prostego zapytania
+        test_prompt = "Cześć! Jak się masz?"
+        
+        payload = {
+            "inputs": test_prompt,
+            "parameters": {
+                "max_new_tokens": 50,
+                "temperature": 0.7
+            }
+        }
+        
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=15)
+        
+        result_html = f"""
+        <h1>🔍 Test API Hugging Face</h1>
+        <h2>Konfiguracja:</h2>
+        <p><strong>Model URL:</strong> {API_URL}</p>
+        <p><strong>Token ustawiony:</strong> {HF_TOKEN != 'TWÓJ_TOKEN_HF' and HF_TOKEN is not None}</p>
+        <p><strong>Token długość:</strong> {len(HF_TOKEN) if HF_TOKEN else 0}</p>
+        
+        <h2>Zapytanie:</h2>
+        <p><strong>Payload:</strong> {payload}</p>
+        
+        <h2>Odpowiedź API:</h2>
+        <p><strong>Status Code:</strong> {response.status_code}</p>
+        <p><strong>Headers:</strong> {dict(response.headers)}</p>
+        <p><strong>Response Text:</strong></p>
+        <pre>{response.text}</pre>
+        
+        <h2>Parsed JSON:</h2>
+        """
+        
+        if response.status_code == 200:
+            try:
+                json_data = response.json()
+                result_html += f"<pre>{json_data}</pre>"
+            except:
+                result_html += "<p>Nie można sparsować JSON</p>"
+        else:
+            result_html += "<p>Błąd API - brak JSON</p>"
+        
+        # Test backup odpowiedzi
+        backup_test = generuj_odpowiedz("Cześć!")
+        result_html += f"""
+        <h2>Test funkcji generuj_odpowiedz:</h2>
+        <p><strong>Odpowiedź:</strong> {backup_test}</p>
+        """
+        
+        return result_html
+        
+    except Exception as e:
+        return f"""
+        <h1>❌ Błąd testu API</h1>
+        <p><strong>Błąd:</strong> {str(e)}</p>
+        <p><strong>Typ błędu:</strong> {type(e).__name__}</p>
+        """
 
 @app.route('/chat', methods=['POST'])
 def chat():
