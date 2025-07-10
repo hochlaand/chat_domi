@@ -11,8 +11,8 @@ app = Flask(__name__)
 
 # Konfiguracja Hugging Face API
 # Opcje modeli (odkomentuj żądany):
-API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"  # Domyślny
-# API_URL = "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill"  # Alternatywny 1
+API_URL = "https://api-inference.huggingface.co/models/facebook/blenderbot-400M-distill"  # Zmieniony na bardziej stabilny
+# API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"  # Oryginalny
 # API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-small"  # Alternatywny 2
 
 HF_TOKEN = os.getenv('HF_TOKEN', 'TWÓJ_TOKEN_HF')  # Ustaw token w pliku .env
@@ -201,7 +201,7 @@ def test_token():
         # Prosta weryfikacja tokena poprzez zapytanie do API
         test_headers = {"Authorization": f"Bearer {HF_TOKEN}"}
         
-        # Próba prostego zapytania do API
+        # Próba prostego zapytania do API - test tokena
         response = requests.get(
             "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium",
             headers=test_headers,
@@ -214,24 +214,35 @@ def test_token():
         <p><strong>Token ustawiony:</strong> {HF_TOKEN != 'TWÓJ_TOKEN_HF' and HF_TOKEN is not None}</p>
         <p><strong>Token długość:</strong> {len(HF_TOKEN) if HF_TOKEN else 0}</p>
         <p><strong>Token pierwsze 10 znaków:</strong> {HF_TOKEN[:10] if HF_TOKEN else 'Brak'}...</p>
+        <p><strong>Token ostatnie 10 znaków:</strong> ...{HF_TOKEN[-10:] if HF_TOKEN else 'Brak'}</p>
         
-        <h2>Test autoryzacji:</h2>
+        <h2>Test autoryzacji (GET na model):</h2>
         <p><strong>Status Code:</strong> {response.status_code}</p>
         <p><strong>Response:</strong></p>
-        <pre>{response.text[:500]}...</pre>
+        <pre>{response.text}</pre>
         
-        <h2>Interpretacja:</h2>
+        <h2>Diagnostyka:</h2>
         """
         
         if response.status_code == 200:
-            result_html += "<p>✅ <strong>Token jest POPRAWNY!</strong></p>"
+            result_html += "<p>✅ Token jest poprawny!</p>"
         elif response.status_code == 401:
-            result_html += "<p>❌ <strong>Token jest NIEPOPRAWNY lub NIEAKTYWNY!</strong></p>"
-            result_html += "<p>Wygeneruj nowy token na: https://huggingface.co/settings/tokens</p>"
+            result_html += "<p>❌ Token jest niepoprawny lub nieaktywny</p>"
+            result_html += "<p>🔧 Sprawdź czy token ma odpowiednie uprawnienia (Read)</p>"
         else:
-            result_html += f"<p>⚠️ <strong>Nieoczekiwany status: {response.status_code}</strong></p>"
+            result_html += f"<p>⚠️ Nieoczekiwany status: {response.status_code}</p>"
+        
+        # Test czy token zawiera spacje lub niepoprawne znaki
+        if HF_TOKEN and (' ' in HF_TOKEN or '\n' in HF_TOKEN or '\t' in HF_TOKEN):
+            result_html += "<p>⚠️ Token może zawierać spacje lub znaki nowej linii!</p>"
         
         result_html += """
+        <h2>Instrukcje:</h2>
+        <p>1. Przejdź do <a href="https://huggingface.co/settings/tokens" target="_blank">Hugging Face Tokens</a></p>
+        <p>2. Wygeneruj nowy token typu "Read"</p>
+        <p>3. Skopiuj token (uważaj na spacje!)</p>
+        <p>4. Zaktualizuj zmienną środowiskową HF_TOKEN w Render</p>
+        <p>5. Restartuj aplikację</p>
         <hr>
         <p><a href="/test-api">🔍 Test pełnego API</a></p>
         <p><a href="/debug">🛠️ Debug Info</a></p>
@@ -242,10 +253,96 @@ def test_token():
         
     except Exception as e:
         return f"""
-        <h1>💥 Błąd testu tokena</h1>
+        <h1>❌ Błąd testowania tokena</h1>
         <p>Błąd: {str(e)}</p>
+        <p>Sprawdź logi aplikacji w Render</p>
         <p><a href="/">🏠 Powrót do chatbota</a></p>
         """
+
+@app.route('/test-models')
+def test_models():
+    """Test różnych modeli do chatbota"""
+    models_to_test = [
+        "facebook/blenderbot-400M-distill",
+        "microsoft/DialoGPT-medium", 
+        "facebook/blenderbot-small-90M",
+        "google/flan-t5-small"
+    ]
+    
+    results = []
+    test_input = "Cześć! Jak się masz?"
+    
+    for model in models_to_test:
+        try:
+            url = f"https://api-inference.huggingface.co/models/{model}"
+            
+            payload = {
+                "inputs": test_input,
+                "parameters": {
+                    "max_length": 100,
+                    "temperature": 0.7,
+                    "do_sample": True
+                }
+            }
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=15)
+            
+            status = "✅ OK" if response.status_code == 200 else f"❌ Error {response.status_code}"
+            
+            results.append({
+                'model': model,
+                'status': status,
+                'response_code': response.status_code,
+                'response_text': response.text[:200]
+            })
+            
+        except Exception as e:
+            results.append({
+                'model': model,
+                'status': f"❌ Exception: {str(e)[:100]}",
+                'response_code': 'Error',
+                'response_text': str(e)
+            })
+    
+    result_html = f"""
+    <h1>🤖 Test różnych modeli</h1>
+    <p><strong>Test input:</strong> {test_input}</p>
+    <p><strong>Token Status:</strong> {'✅ Set' if HF_TOKEN and HF_TOKEN != 'TWÓJ_TOKEN_HF' else '❌ Not set'}</p>
+    
+    <h2>Wyniki:</h2>
+    <table border="1" style="border-collapse: collapse; width: 100%;">
+        <tr>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Response Code</th>
+            <th>Response Preview</th>
+        </tr>
+    """
+    
+    for result in results:
+        result_html += f"""
+        <tr>
+            <td>{result['model']}</td>
+            <td>{result['status']}</td>
+            <td>{result['response_code']}</td>
+            <td><pre style="white-space: pre-wrap; max-width: 300px; overflow: hidden;">{result['response_text']}</pre></td>
+        </tr>
+        """
+    
+    result_html += """
+    </table>
+    
+    <h2>Instrukcje:</h2>
+    <p>Model z statusem ✅ OK można użyć w chatbocie</p>
+    <p>Aby zmienić model, zaktualizuj zmienną API_URL w kodzie</p>
+    
+    <hr>
+    <p><a href="/test-token">🔐 Test tokena</a></p>
+    <p><a href="/test-api">🔍 Test aktualnego API</a></p>
+    <p><a href="/">🏠 Powrót do chatbota</a></p>
+    """
+    
+    return result_html
 
 if __name__ == '__main__':
     # Pobierz port z zmiennej środowiskowej (dla hostingu w chmurze)
