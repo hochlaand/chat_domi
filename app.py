@@ -474,7 +474,7 @@ def test_hardcoded_token():
     # UWAGA: To tylko do testów - w produkcji usuń ten endpoint!
     
     # Tutaj możesz wstawić token bezpośrednio do testów
-    HARDCODED_TOKEN = "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"  # Wstaw nowy token z HF
+    HARDCODED_TOKEN = "TOKEN_TEST"  # Wstaw nowy token z HF
     
     # UWAGA: Najpierw wygeneruj nowy token na https://huggingface.co/settings/tokens
     # Potem zastąp "WSTAW_TUTAJ_NOWY_TOKEN" prawdziwym tokenem
