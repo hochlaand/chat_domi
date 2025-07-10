@@ -303,29 +303,12 @@
             </div>
             
             <div class="info-section">
-                <h3>💫 Jak mogę Ci pomóc?</h3>
+                <h3>🎉 Co potrafię?</h3>
                 <ul class="info-list">
-                    <li>Rozmawiam z Tobą w zabawny i pozytywny sposób</li>
-                    <li>Odpowiadam na Twoje pytania z humorem i ciepłem</li>
-                    <li>Staram się Cię rozśmieszyć i poprawić humor</li>
-                    <li>Wiem, że jesteś cudowną tancerką i świetną osobą!</li>
+                    <li>Rozśmieszam Cię jak nikt inny! 😄</li>
+                    <li>Komplementuję Twoją cudowność 💖</li>
+                    <li>Dodaję energii lepiej niż kawa ☕</li>
                 </ul>
-                <button class="toggle-info" onclick="toggleInfo()">
-                    Pokaż więcej informacji ▼
-                </button>
-                <div class="info-content" id="infoContent">
-                    <h3>🎭 O czym możemy rozmawiać?</h3>
-                    <ul class="info-list">
-                        <li>O tańcu i Twojej pasji</li>
-                        <li>O pracy w przedszkolu</li>
-                        <li>O tym, jak wspaniale wyglądasz</li>
-                        <li>O Twoich planach i marzeniach</li>
-                        <li>O wszystkim, co Cię interesuje!</li>
-                    </ul>
-                    <p style="margin-top: 10px; font-style: italic; color: #888;">
-                        💕 Pamiętaj - jestem tutaj, żeby dodać Ci energii i sprawić radość!
-                    </p>
-                </div>
             </div>
         </div>
         
@@ -449,20 +432,6 @@
         messageInput.addEventListener('input', () => {
             sendButton.disabled = !messageInput.value.trim() || sendButton.disabled;
         });
-
-        // Funkcja do pokazywania/ukrywania dodatkowych informacji
-        function toggleInfo() {
-            const infoContent = document.getElementById('infoContent');
-            const toggleButton = document.querySelector('.toggle-info');
-            
-            if (infoContent.style.display === 'none' || infoContent.style.display === '') {
-                infoContent.style.display = 'block';
-                toggleButton.textContent = 'Ukryj informacje ▲';
-            } else {
-                infoContent.style.display = 'none';
-                toggleButton.textContent = 'Pokaż więcej informacji ▼';
-            }
-        }
     </script>
 </body>
 </html>
