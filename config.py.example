@@ -1,0 +1,8 @@
+# Alternatywny sposób konfiguracji tokena
+# UWAGA: Nie commituj tego pliku z prawdziwym tokenem!
+
+# Skopiuj ten plik jako config.py i wstaw swój token:
+# HF_TOKEN_ALT = "hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Przykład:
+HF_TOKEN_ALT = "TWÓJ_TOKEN_TUTAJ"
