@@ -4,29 +4,20 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 
-# Próba importu Google Gemini (może nie być zainstalowane lokalnie)
-try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
-except ImportError:
-    print("⚠️ google-generativeai nie zainstalowane - używam Hugging Face")
-    GEMINI_AVAILABLE = False
-
 # Załaduj zmienne środowiskowe z pliku .env
 load_dotenv()
 
 app = Flask(__name__)
 
-# Konfiguracja Google Gemini AI
+# Konfiguracja Google Gemini AI - przez REST API
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-if GEMINI_API_KEY and GEMINI_AVAILABLE:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-pro')
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+
+if GEMINI_API_KEY:
     print(f"✅ Gemini API skonfigurowane (klucz: {GEMINI_API_KEY[:10]}...)")
     USE_GEMINI = True
 else:
     print("⚠️ Używam Hugging Face jako głównego API")
-    model = None
     USE_GEMINI = False
 
 # Backup/Alternative - Hugging Face API
@@ -59,7 +50,7 @@ def generuj_odpowiedz(pytanie):
     ]
     
     # Spróbuj najpierw Gemini (jeśli dostępne)
-    if USE_GEMINI and model:
+    if USE_GEMINI:
         try:
             return generuj_odpowiedz_gemini(pytanie)
         except Exception as e:
@@ -69,7 +60,7 @@ def generuj_odpowiedz(pytanie):
     return generuj_odpowiedz_hf(pytanie)
 
 def generuj_odpowiedz_gemini(pytanie):
-    """Generuje odpowiedź używając Google Gemini"""
+    """Generuje odpowiedź używając Google Gemini REST API"""
     
     # Spersonalizowany prompt dla Dominiki
     prompt = f"""
@@ -96,33 +87,59 @@ def generuj_odpowiedz_gemini(pytanie):
     Odpowiedz w sposób ciepły, zabawny i pozytywny:
     """
     
-    print(f"🤖 Wysyłam zapytanie do Gemini: {pytanie[:50]}...")
+    print(f"🤖 Wysyłam zapytanie do Gemini REST API: {pytanie[:50]}...")
     
-    # Konfiguracja generacji
-    generation_config = {
-        'temperature': 0.8,
-        'top_p': 0.9,
-        'top_k': 40,
-        'max_output_tokens': 200,
+    # Przygotuj payload zgodnie z REST API
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": prompt.strip()
+                    }
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.8,
+            "topP": 0.9,
+            "topK": 40,
+            "maxOutputTokens": 200
+        }
     }
     
-    response = model.generate_content(
-        prompt,
-        generation_config=generation_config,
-        safety_settings=[
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
-        ]
-    )
+    # Headers zgodnie z dokumentacją
+    headers = {
+        'Content-Type': 'application/json',
+        'X-goog-api-key': GEMINI_API_KEY
+    }
     
-    if response.text:
-        odpowiedz = response.text.strip()
-        print(f"✅ Gemini odpowiedź: {odpowiedz[:100]}...")
-        return odpowiedz
-    else:
-        raise Exception("Gemini zwróciło pustą odpowiedź")
+    try:
+        response = requests.post(GEMINI_API_URL, headers=headers, json=payload, timeout=15)
+        print(f"📊 Gemini Status: {response.status_code}")
+        print(f"📝 Gemini Response: {response.text[:200]}...")
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            # Wyciągnij tekst z odpowiedzi Gemini
+            if 'candidates' in result and len(result['candidates']) > 0:
+                candidate = result['candidates'][0]
+                if 'content' in candidate and 'parts' in candidate['content']:
+                    parts = candidate['content']['parts']
+                    if len(parts) > 0 and 'text' in parts[0]:
+                        odpowiedz = parts[0]['text'].strip()
+                        print(f"✅ Gemini odpowiedź: {odpowiedz[:100]}...")
+                        return odpowiedz
+            
+            raise Exception("Nie znaleziono tekstu w odpowiedzi Gemini")
+        else:
+            raise Exception(f"Gemini API błąd: {response.status_code} - {response.text}")
+            
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Błąd połączenia z Gemini: {e}")
+    except Exception as e:
+        raise Exception(f"Błąd przetwarzania odpowiedzi Gemini: {e}")
 
 def generuj_odpowiedz_hf(pytanie):
     """Backup funkcja używająca Hugging Face GPT-2"""
@@ -891,13 +908,11 @@ def test_gemini():
     if not USE_GEMINI:
         return f"""
         <h1>❌ Gemini niedostępny</h1>
-        <p><strong>Gemini Available:</strong> {GEMINI_AVAILABLE}</p>
         <p><strong>API Key:</strong> {'Set' if GEMINI_API_KEY else 'Not set'}</p>
-        <p><strong>Powód:</strong> {'Brak klucza API' if not GEMINI_API_KEY else 'Biblioteka nie zainstalowana'}</p>
+        <p><strong>Powód:</strong> Brak klucza API</p>
         
         <h2>Instrukcje:</h2>
         <ol>
-            <li>Zainstaluj: <code>pip install google-generativeai</code></li>
             <li>Ustaw GEMINI_API_KEY w .env</li>
             <li>Restartuj aplikację</li>
         </ol>
@@ -981,30 +996,71 @@ def test_gemini_simple():
     if not USE_GEMINI:
         return """
         <h1>❌ Gemini niedostępny</h1>
-        <p>Zainstaluj google-generativeai i ustaw GEMINI_API_KEY</p>
+        <p>Ustaw GEMINI_API_KEY w .env</p>
         <p><a href="/debug">🛠️ Debug</a></p>
         """
     
     try:
-        # Bardzo prosty test
+        # Bardzo prosty test z REST API
         simple_prompt = "Powiedz 'Cześć Dominika!' po polsku"
         
-        response = model.generate_content(simple_prompt)
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": simple_prompt
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'X-goog-api-key': GEMINI_API_KEY
+        }
+        
+        response = requests.post(GEMINI_API_URL, headers=headers, json=payload, timeout=10)
         
         result_html = f"""
         <h1>🧪 Test Simple Gemini</h1>
         <p><strong>API Key:</strong> {GEMINI_API_KEY[:15]}...</p>
+        <p><strong>API URL:</strong> {GEMINI_API_URL}</p>
         <p><strong>Prompt:</strong> {simple_prompt}</p>
         
         <h2>Odpowiedź:</h2>
-        <p><strong>Status:</strong> ✅ Sukces</p>
+        <p><strong>Status Code:</strong> {response.status_code}</p>
         <p><strong>Response Text:</strong></p>
-        <pre>{response.text if response.text else 'Brak tekstu'}</pre>
+        <pre>{response.text}</pre>
+        """
         
-        <h2>Szczegóły response:</h2>
-        <pre>Type: {type(response)}
-Text length: {len(response.text) if response.text else 0}</pre>
+        if response.status_code == 200:
+            try:
+                result = response.json()
+                if 'candidates' in result and len(result['candidates']) > 0:
+                    candidate = result['candidates'][0]
+                    if 'content' in candidate and 'parts' in candidate['content']:
+                        parts = candidate['content']['parts']
+                        if len(parts) > 0 and 'text' in parts[0]:
+                            generated_text = parts[0]['text']
+                            result_html += f"""
+                            <h2>Wyciągnięty tekst:</h2>
+                            <pre>{generated_text}</pre>
+                            <p><strong>Status:</strong> ✅ Sukces - Gemini działa!</p>
+                            """
+                        else:
+                            result_html += "<p><strong>Status:</strong> ❌ Brak tekstu w parts</p>"
+                    else:
+                        result_html += "<p><strong>Status:</strong> ❌ Brak content/parts</p>"
+                else:
+                    result_html += "<p><strong>Status:</strong> ❌ Brak candidates</p>"
+            except Exception as e:
+                result_html += f"<p><strong>Błąd parsowania:</strong> {e}</p>"
+        else:
+            result_html += f"<p><strong>Status:</strong> ❌ Błąd API - {response.status_code}</p>"
         
+        result_html += """
         <hr>
         <p><a href="/test-gemini">🤖 Test pełny</a></p>
         <p><a href="/">🏠 Powrót do chatbota</a></p>
@@ -1042,7 +1098,7 @@ def test_comparison():
             gemini_response = generuj_odpowiedz_gemini(test_question)
             gemini_status = "✅ OK"
         else:
-            gemini_response = "Gemini niedostępny - brak biblioteki lub klucza API"
+            gemini_response = "Gemini niedostępny - brak klucza API"
             gemini_status = "❌ Niedostępny"
     except Exception as e:
         gemini_response = f"Błąd: {str(e)}"
