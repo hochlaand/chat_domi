@@ -154,6 +154,7 @@ def debug():
         <li><a href="/test-token">🔐 Test tokena</a> - standardowy test</li>
         <li><a href="/test-api">🧪 Test API</a> - test pełnego API</li>
         <li><a href="/test-models">🤖 Test modeli</a> - test różnych modeli</li>
+        <li><a href="/test-simple-api">🧪 Test Simple API</a> - test z najprostszym zapytaniem</li>
     </ul>
     
     <h2>📁 Wszystkie pliki na serwerze:</h2>
@@ -473,7 +474,10 @@ def test_hardcoded_token():
     # UWAGA: To tylko do testów - w produkcji usuń ten endpoint!
     
     # Tutaj możesz wstawić token bezpośrednio do testów
-    HARDCODED_TOKEN = "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"  # Poprawny token do testów
+    HARDCODED_TOKEN = "WSTAW_TUTAJ_NOWY_TOKEN"  # Wstaw nowy token z HF
+    
+    # UWAGA: Najpierw wygeneruj nowy token na https://huggingface.co/settings/tokens
+    # Potem zastąp "WSTAW_TUTAJ_NOWY_TOKEN" prawdziwym tokenem
     
     # Test z hardcoded tokenem
     try:
@@ -597,6 +601,95 @@ def test_token_formats():
     <hr>
     <p><a href="/debug-token-raw">🔍 Debug Raw Token</a></p>
     <p><a href="/test-token">🔐 Test tokena</a></p>
+    <p><a href="/">🏠 Powrót do chatbota</a></p>
+    """
+    
+    return result_html
+
+@app.route('/test-simple-api')
+def test_simple_api():
+    """Test z najprostszym możliwym zapytaniem"""
+    
+    # Użyj nowego tokena gdy go uzyskasz
+    TEST_TOKEN = "WSTAW_TUTAJ_NOWY_TOKEN"  # Zastąp prawdziwym tokenem
+    
+    if TEST_TOKEN == "WSTAW_TUTAJ_NOWY_TOKEN":
+        return """
+        <h1>⚠️ Wstaw nowy token</h1>
+        <p>Wygeneruj nowy token na HF i wstaw go w kodzie</p>
+        <p><a href="https://huggingface.co/settings/tokens" target="_blank">🔗 Hugging Face Tokens</a></p>
+        """
+    
+    # Testuj różne proste modele
+    simple_models = [
+        "gpt2",
+        "distilgpt2", 
+        "microsoft/DialoGPT-small",
+        "facebook/blenderbot-small-90M"
+    ]
+    
+    results = []
+    
+    for model in simple_models:
+        try:
+            url = f"https://api-inference.huggingface.co/models/{model}"
+            headers = {"Authorization": f"Bearer {TEST_TOKEN}"}
+            
+            # Bardzo prosty payload
+            payload = {"inputs": "Hello"}
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=10)
+            
+            status = "✅ OK" if response.status_code == 200 else f"❌ {response.status_code}"
+            
+            results.append({
+                'model': model,
+                'status': status,
+                'response_code': response.status_code,
+                'response': response.text[:200]
+            })
+            
+        except Exception as e:
+            results.append({
+                'model': model,
+                'status': f"❌ Error: {str(e)[:50]}",
+                'response_code': 'Exception',
+                'response': str(e)[:200]
+            })
+    
+    result_html = f"""
+    <h1>🧪 Test Simple API</h1>
+    <p><strong>Test Token:</strong> {TEST_TOKEN[:15]}...</p>
+    <p><strong>Simple Input:</strong> "Hello"</p>
+    
+    <h2>Wyniki:</h2>
+    <table border="1" style="border-collapse: collapse; width: 100%;">
+        <tr><th>Model</th><th>Status</th><th>Response Code</th><th>Response</th></tr>
+    """
+    
+    for result in results:
+        result_html += f"""
+        <tr>
+            <td>{result['model']}</td>
+            <td>{result['status']}</td>
+            <td>{result['response_code']}</td>
+            <td><pre>{result['response']}</pre></td>
+        </tr>
+        """
+    
+    result_html += """
+    </table>
+    
+    <p><strong>Instrukcje:</strong></p>
+    <ol>
+        <li>Jeśli wszystkie modele zwracają 401 - token jest niepoprawny</li>
+        <li>Jeśli niektóre modele działają - używaj działającego modelu</li>
+        <li>Jeśli żaden nie działa - wygeneruj nowy token</li>
+    </ol>
+    
+    <hr>
+    <p><a href="/test-hardcoded-token">🔧 Test Hardcoded Token</a></p>
+    <p><a href="/debug-token-raw">🔍 Debug Raw Token</a></p>
     <p><a href="/">🏠 Powrót do chatbota</a></p>
     """
     
