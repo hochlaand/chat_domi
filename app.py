@@ -10,7 +10,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # Konfiguracja Hugging Face API
-API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-large"
+API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"  # Zmieniono na medium
 HF_TOKEN = os.getenv('HF_TOKEN', 'TWÓJ_TOKEN_HF')  # Ustaw token w pliku .env
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
@@ -53,21 +53,28 @@ def generuj_odpowiedz(pytanie):
             }
         }
         
+        print(f"🔍 Wysyłam zapytanie do API: {prompt[:50]}...")
         response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
+        print(f"📊 Status code: {response.status_code}")
+        print(f"📝 Odpowiedź API: {response.text[:200]}...")
         
         if response.status_code == 200:
             result = response.json()
+            print(f"✅ Otrzymano odpowiedź: {result}")
             if isinstance(result, list) and len(result) > 0:
                 tekst = result[0].get('generated_text', '').replace(prompt, '').strip()
                 if tekst and len(tekst) > 10:
+                    print(f"🎉 Zwracam odpowiedź: {tekst}")
                     return tekst
+        else:
+            print(f"❌ Błąd API: {response.status_code} - {response.text}")
         
         # Fallback do gotowych odpowiedzi
         import random
         return random.choice(backup_responses)
         
     except Exception as e:
-        print(f"Błąd API: {e}")
+        print(f"💥 Błąd API: {e}")
         import random
         return random.choice(backup_responses)
 
@@ -93,11 +100,19 @@ def debug():
     <h1>Debug Info</h1>
     <p><strong>Folder templates istnieje:</strong> {templates_exist}</p>
     <p><strong>Plik templates/index.html istnieje:</strong> {index_exist}</p>
+    <p><strong>HF_TOKEN ustawiony:</strong> {HF_TOKEN != 'TWÓJ_TOKEN_HF' and HF_TOKEN is not None}</p>
+    <p><strong>API URL:</strong> {API_URL}</p>
     <h2>Wszystkie pliki na serwerze:</h2>
     <pre>{"<br>".join(files)}</pre>
     """
     
     return debug_info
+
+@app.route('/test-api')
+def test_api():
+    """Test endpoint dla API Hugging Face"""
+    test_response = generuj_odpowiedz("Cześć!")
+    return f"<h1>Test API</h1><p>Odpowiedź: {test_response}</p>"
 
 @app.route('/chat', methods=['POST'])
 def chat():
